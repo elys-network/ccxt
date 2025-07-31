@@ -66,6 +66,7 @@ var deribit = require('./src/deribit.js');
 var derive = require('./src/derive.js');
 var digifinex = require('./src/digifinex.js');
 var ellipx = require('./src/ellipx.js');
+var elys = require('./src/elys.js');
 var exmo = require('./src/exmo.js');
 var fmfwio = require('./src/fmfwio.js');
 var foxbit = require('./src/foxbit.js');
@@ -251,6 +252,7 @@ const exchanges = {
     'derive': derive,
     'digifinex': digifinex,
     'ellipx': ellipx,
+    'elys': elys,
     'exmo': exmo,
     'fmfwio': fmfwio,
     'foxbit': foxbit,
@@ -483,6 +485,7 @@ exports.deribit = deribit;
 exports.derive = derive;
 exports.digifinex = digifinex;
 exports.ellipx = ellipx;
+exports.elys = elys;
 exports.exmo = exmo;
 exports.fmfwio = fmfwio;
 exports.foxbit = foxbit;

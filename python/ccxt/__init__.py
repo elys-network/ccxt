@@ -137,6 +137,7 @@ from ccxt.deribit import deribit                                      # noqa: F4
 from ccxt.derive import derive                                        # noqa: F401
 from ccxt.digifinex import digifinex                                  # noqa: F401
 from ccxt.ellipx import ellipx                                        # noqa: F401
+from ccxt.elys import elys                                            # noqa: F401
 from ccxt.exmo import exmo                                            # noqa: F401
 from ccxt.fmfwio import fmfwio                                        # noqa: F401
 from ccxt.foxbit import foxbit                                        # noqa: F401
@@ -245,6 +246,7 @@ exchanges = [
     'derive',
     'digifinex',
     'ellipx',
+    'elys',
     'exmo',
     'fmfwio',
     'foxbit',

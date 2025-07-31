@@ -392,6 +392,7 @@ class Exchange {
         'derive',
         'digifinex',
         'ellipx',
+        'elys',
         'exmo',
         'fmfwio',
         'foxbit',

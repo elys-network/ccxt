@@ -100,6 +100,7 @@ import deribit from  './src/deribit.js'
 import derive from  './src/derive.js'
 import digifinex from  './src/digifinex.js'
 import ellipx from  './src/ellipx.js'
+import elys from  './src/elys.js'
 import exmo from  './src/exmo.js'
 import fmfwio from  './src/fmfwio.js'
 import foxbit from  './src/foxbit.js'
@@ -284,6 +285,7 @@ const exchanges = {
     'derive':                 derive,
     'digifinex':              digifinex,
     'ellipx':                 ellipx,
+    'elys':                   elys,
     'exmo':                   exmo,
     'fmfwio':                 fmfwio,
     'foxbit':                 foxbit,
@@ -609,6 +611,7 @@ export {
     derive,
     digifinex,
     ellipx,
+    elys,
     exmo,
     fmfwio,
     foxbit,
