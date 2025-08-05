@@ -70,7 +70,7 @@ class elys extends Exchange {
                 'fetchFundingHistory' => false,
                 'fetchFundingRate' => false,
                 'fetchFundingRateHistory' => false,
-                'fetchFundingRates' => false,
+                'fetchFundingRates' => true,
                 'fetchIndexOHLCV' => false,
                 'fetchIsolatedBorrowRate' => false,
                 'fetchIsolatedBorrowRates' => false,
@@ -85,13 +85,13 @@ class elys extends Exchange {
                 'fetchMyLiquidations' => false,
                 'fetchMyTrades' => true,
                 'fetchOHLCV' => true,
-                'fetchOpenInterest' => false,
+                'fetchOpenInterest' => true,
                 'fetchOpenInterestHistory' => false,
                 'fetchOpenInterests' => false,
-                'fetchOpenOrders' => false,
-                'fetchOrder' => false,
+                'fetchOpenOrders' => true,
+                'fetchOrder' => true,
                 'fetchOrderBook' => false,
-                'fetchOrders' => false,
+                'fetchOrders' => true,
                 'fetchOrderTrades' => false,
                 'fetchPosition' => false,
                 'fetchPositionMode' => false,
@@ -101,7 +101,7 @@ class elys extends Exchange {
                 'fetchTicker' => 'emulated',
                 'fetchTickers' => true,
                 'fetchTime' => false,
-                'fetchTrades' => false,
+                'fetchTrades' => true,
                 'fetchTradingFee' => false,
                 'fetchTradingFees' => false,
                 'fetchTransfer' => false,
@@ -145,6 +145,12 @@ class elys extends Exchange {
                         'v1/currencies' => 1,
                         'v1/markets' => 1,
                         'v1/tickers' => 1,
+                        'v1/funding-rates' => 1,
+                        'v1/orders/open' => 1,
+                        'v1/orders' => 1,
+                        'v1/order' => 1,
+                        'v1/open-interest' => 1,
+                        'trades/{address}/{symbol}/{size}/{from}' => 1,
                     ),
                 ),
             ),
@@ -445,6 +451,122 @@ class elys extends Exchange {
         ), $market);
     }
 
+    public function fetch_funding_rates(?array $symbols = null, $params = array ()): PromiseInterface {
+        return Async\async(function () use ($symbols, $params) {
+            /**
+             * fetch the funding rates for multiple markets
+             * @param {string[]|null} $symbols unified $symbols of the markets to fetch the funding rates for, all market funding rates are returned if not assigned
+             * @param {array} [$params] extra parameters specific to the exchange API endpoint
+             * @return {array} a dictionary of funding rates structures
+             */
+            Async\await($this->load_markets());
+            $url = $this->urls['api']['public'] . '/v1/funding-rates';
+            $response = Async\await($this->fetch($url, 'GET', null, null));
+            //
+            // array(
+            //   {
+            //     "symbol" => "ATOM-USDC",
+            //     "funding_rate" => "-0.117462885648393966",
+            //     "long_rate" => "-0.189599831252923122",
+            //     "short_rate" => "0.117462885648393966",
+            //     "timestamp" => 1754361530209
+            //   }
+            // )
+            //
+            $result = array();
+            for ($i = 0; $i < count($response); $i++) {
+                $fundingRate = $this->parse_funding_rate($response[$i]);
+                $symbol = $fundingRate['symbol'];
+                $result[$symbol] = $fundingRate;
+            }
+            return $this->filter_by_array($result, 'symbol', $symbols);
+        }) ();
+    }
+
+    public function fetch_open_interest(string $symbol, $params = array ()): PromiseInterface {
+        return Async\async(function () use ($symbol, $params) {
+            /**
+             * fetch the open interest for a $symbol
+             * @param {string} $symbol unified $market $symbol
+             * @param {array} [$params] extra parameters specific to the exchange API endpoint
+             * @return {array} an open interest structure
+             */
+            Async\await($this->load_markets());
+            $market = $this->market($symbol);
+            $query = array(
+                'symbol' => $market['base'] . '-' . $market['quote'],
+            );
+            $url = $this->urls['api']['public'] . '/v1/open-interest?' . $this->urlencode($query);
+            $response = Async\await($this->fetch($url, 'GET', null, null));
+            //
+            // {
+            //   "openInterest" => "-341.19996",
+            //   "symbol" => "ATOM-USDC",
+            //   "time" => 1754427059775
+            // }
+            //
+            return $this->parse_open_interest($response, $market);
+        }) ();
+    }
+
+    public function parse_funding_rate($fundingRate, ?array $market = null): array {
+        //
+        // {
+        //   "symbol" => "ATOM-USDC",
+        //   "funding_rate" => "-0.117462885648393966",
+        //   "long_rate" => "-0.189599831252923122",
+        //   "short_rate" => "0.117462885648393966",
+        //   "timestamp" => 1754361530209
+        // }
+        //
+        $marketId = $this->safe_string($fundingRate, 'symbol');
+        $symbol = $this->safe_symbol($marketId, $market, '-');
+        $timestamp = $this->safe_integer($fundingRate, 'timestamp');
+        $rate = $this->safe_string($fundingRate, 'funding_rate');
+        return array(
+            'info' => $fundingRate,
+            'symbol' => $symbol,
+            'markPrice' => null,
+            'indexPrice' => null,
+            'interestRate' => null,
+            'estimatedSettlePrice' => null,
+            'timestamp' => $timestamp,
+            'datetime' => $this->iso8601($timestamp),
+            'fundingRate' => $this->parse_number($rate),
+            'fundingTimestamp' => $timestamp,
+            'fundingDatetime' => $this->iso8601($timestamp),
+            'nextFundingRate' => null,
+            'nextFundingTimestamp' => null,
+            'nextFundingDatetime' => null,
+            'previousFundingRate' => null,
+            'previousFundingTimestamp' => null,
+            'previousFundingDatetime' => null,
+        );
+    }
+
+    public function parse_open_interest($openInterest, ?array $market = null): OpenInterest {
+        //
+        // {
+        //   "openInterest" => "-341.19996",
+        //   "symbol" => "ATOM-USDC",
+        //   "time" => 1754427059775
+        // }
+        //
+        $marketId = $this->safe_string($openInterest, 'symbol');
+        $symbol = $this->safe_symbol($marketId, $market, '-');
+        $openInterestAmount = $this->safe_string($openInterest, 'openInterest');
+        $timestamp = $this->safe_integer($openInterest, 'time');
+        return array(
+            'symbol' => $symbol,
+            'baseVolume' => $this->parse_number($openInterestAmount),
+            'quoteVolume' => null,
+            'openInterestAmount' => $this->parse_number($openInterestAmount),
+            'timestamp' => $timestamp,
+            'datetime' => $this->iso8601($timestamp),
+            'info' => $openInterest,
+        );
+    }
+
     public function fetch_ohlcv(string $symbol, $timeframe = '1m', ?int $since = null, ?int $limit = null, $params = array ()): PromiseInterface {
         return Async\async(function () use ($symbol, $timeframe, $since, $limit, $params) {
             /**
@@ -652,6 +774,365 @@ class elys extends Exchange {
         }) ();
     }
 
+    public function fetch_trades(?string $symbol = null, ?int $since = null, ?int $limit = null, $params = array ()): PromiseInterface {
+        return Async\async(function () use ($symbol, $since, $limit, $params) {
+            /**
+             * fetch historical trades for a $symbol
+             * @param {string} $symbol unified $market $symbol
+             * @param {int} [$since] the earliest time in ms to fetch trades for
+             * @param {int} [$limit] the maximum number of trades to return
+             * @param {array} [$params] extra parameters specific to the exchange API endpoint
+             * @param {string} $params->address the wallet $address to fetch trades for (required)
+             * @param {int} [$params->from] pagination offset, defaults to 0
+             * @return {Trade[]} a list of $trade structures
+             */
+            if ($symbol === null) {
+                throw new ArgumentsRequired($this->id . ' fetchTrades() requires a $symbol parameter');
+            }
+            Async\await($this->load_markets());
+            $market = $this->market($symbol);
+            $address = $this->safe_string($params, 'address');
+            if ($address === null) {
+                throw new ArgumentsRequired($this->id . ' fetchTrades() requires an $address parameter');
+            }
+            $fromParam = $this->safe_string($params, 'from', '0');
+            $size = $this->safe_string($params, 'size', $limit ? (string) $limit : '100');
+            $params = $this->omit($params, array( 'address', 'from', 'size' ));
+            // Convert $symbol to API format (base-quote)
+            $symbolId = $market['base'] . '-' . $market['quote'];
+            $path = 'trades/' . $address . '/' . $symbolId . '/' . $size . '/' . $fromParam;
+            $url = $this->urls['api']['public'] . '/' . $path;
+            $response = Async\await($this->fetch($url, 'GET', null, null));
+            //
+            // {
+            //     "perpetual_position" => array(
+            //         {
+            //             "type" => "perpetual_mtp_open",
+            //             "mtp_id" => "64",
+            //             "owner" => "elys1u8c28343vvhwgwhf29w6hlcz73hvq7lwxmrl46",
+            //             "position" => "SHORT",
+            //             "amm_pool_id" => "1",
+            //             "collateral_asset" => "USDC",
+            //             "collateral" => "19.754485",
+            //             "open_price" => "4.345121747801747801",
+            //             "created_at" => "2025-07-30T21:44:56.048Z",
+            //             "txhash" => "68582DF04AE7F04302F66D937B18E2B7B181664A7C01247689473DA746DBC153"
+            //         }
+            //     ),
+            //     "spot_orders" => array(
+            //         {
+            //             "type" => "tradeshield_execute_market_buy_spot_order",
+            //             "order_type" => "MARKETBUY",
+            //             "order_id" => "0",
+            //             "order_price" => "5.354117447312775000",
+            //             "order_amount" => array(
+            //                 "denom" => "ATOM",
+            //                 "amount" => "1"
+            //             ),
+            //             "owner_address" => "elys1u8c28343vvhwgwhf29w6hlcz73hvq7lwxmrl46",
+            //             "created_at" => "2025-05-12T12:40:38.309Z",
+            //             "txhash" => "7C8555767E7D8D492B62E132108EC4CE26DAC8D78F008611A5AE3C1FD3D2DCD5"
+            //         }
+            //     )
+            // }
+            //
+            $result = array();
+            // Process perpetual position trades
+            $perpetualPositions = $this->safe_list($response, 'perpetual_position', array());
+            for ($i = 0; $i < count($perpetualPositions); $i++) {
+                $trade = $this->parse_my_trade($perpetualPositions[$i], $market);
+                $result[] = $trade;
+            }
+            // Process spot order trades
+            $spotOrders = $this->safe_list($response, 'spot_orders', array());
+            for ($i = 0; $i < count($spotOrders); $i++) {
+                $trade = $this->parse_my_trade($spotOrders[$i], $market);
+                $result[] = $trade;
+            }
+            return $this->filter_by_since_limit($result, $since, $limit, 'timestamp');
+        }) ();
+    }
+
+    public function fetch_open_orders(?string $symbol = null, ?int $since = null, ?int $limit = null, $params = array ()): PromiseInterface {
+        return Async\async(function () use ($symbol, $since, $limit, $params) {
+            /**
+             * fetch open orders for a $symbol
+             * @param {string} $symbol unified $market $symbol
+             * @param {int} [$since] the earliest time in ms to fetch orders for
+             * @param {int} [$limit] the maximum number of orders to return
+             * @param {array} [$params] extra parameters specific to the exchange API endpoint
+             * @param {string} [$params->address] the wallet $address to fetch orders for
+             * @return {Order[]} a list of $order structures
+             */
+            if ($symbol === null) {
+                throw new ArgumentsRequired($this->id . ' fetchOpenOrders() requires a $symbol parameter');
+            }
+            Async\await($this->load_markets());
+            $market = $this->market($symbol);
+            $address = $this->safe_string($params, 'address');
+            $query = array(
+                'symbol' => $market['base'] . '-' . $market['quote'],
+            );
+            if ($address !== null) {
+                $query['address'] = $address;
+            }
+            $params = $this->omit($params, array( 'address' ));
+            $url = $this->urls['api']['public'] . '/v1/orders/open?' . $this->urlencode($query);
+            $response = Async\await($this->fetch($url, 'GET', null, null));
+            //
+            // {
+            //   "pending_spot_orders" => null,
+            //   "pending_perpetual_orders" => array(
+            //     {
+            //       "order_id" => "24",
+            //       "owner_address" => "elys1wstfr2fx8h9tdxhs4wv4t8sjxdgrw6f9dpdpdf",
+            //       "position" => "LONG",
+            //       "trigger_price" => "0.000000000000000000",
+            //       "collateral_denom" => "USDC",
+            //       "collateral_value" => "4240.469631",
+            //       "leverage" => "3.000000000000000000",
+            //       "take_profit_price" => "0.000000000000000000",
+            //       "stop_loss_price" => "0.000000000000000000",
+            //       "pool_id" => "6",
+            //       "liquidation_price" => "2513.381153809520746186",
+            //       "funding_rate" => "0.000000000000000000",
+            //       "borrow_interest_rate" => "0.000000000000000000",
+            //       "position_size_denom" => "ETH",
+            //       "position_size_value" => "3.457635083"
+            //     }
+            //   )
+            // }
+            //
+            $result = array();
+            // Process pending spot orders
+            $spotOrders = $this->safe_list($response, 'pending_spot_orders', array());
+            for ($i = 0; $i < count($spotOrders); $i++) {
+                $order = $this->parse_order($spotOrders[$i], $market);
+                $result[] = $order;
+            }
+            // Process pending perpetual orders
+            $perpetualOrders = $this->safe_list($response, 'pending_perpetual_orders', array());
+            for ($i = 0; $i < count($perpetualOrders); $i++) {
+                $order = $this->parse_order($perpetualOrders[$i], $market);
+                $result[] = $order;
+            }
+            return $this->filter_by_since_limit($result, $since, $limit, 'timestamp');
+        }) ();
+    }
+
+    public function fetch_order(string $id, ?string $symbol = null, $params = array ()): PromiseInterface {
+        return Async\async(function () use ($id, $symbol, $params) {
+            /**
+             * fetch a specific order by $id
+             * @param {string} $id order $id
+             * @param {string} $symbol unified $market $symbol
+             * @param {array} [$params] extra parameters specific to the exchange API endpoint
+             * @param {string} $params->address the wallet $address that owns the order (required)
+             * @return {array} an order structure
+             */
+            if ($id === null) {
+                throw new ArgumentsRequired($this->id . ' fetchOrder() requires an $id parameter');
+            }
+            if ($symbol === null) {
+                throw new ArgumentsRequired($this->id . ' fetchOrder() requires a $symbol parameter');
+            }
+            Async\await($this->load_markets());
+            $market = $this->market($symbol);
+            $address = $this->safe_string($params, 'address');
+            if ($address === null) {
+                throw new ArgumentsRequired($this->id . ' fetchOrder() requires an $address parameter');
+            }
+            $query = array(
+                'id' => $id,
+                'symbol' => $market['base'] . '-' . $market['quote'],
+                'address' => $address,
+            );
+            $params = $this->omit($params, array( 'address' ));
+            $url = $this->urls['api']['public'] . '/v1/order?' . $this->urlencode($query);
+            $response = Async\await($this->fetch($url, 'GET', null, null));
+            //
+            // {
+            //   "collateral_asset" => "USDC",
+            //   "trading_asset" => "WBTC",
+            //   "liability_asset" => "USDC",
+            //   "custody_asset" => "WBTC",
+            //   "collateral" => "21.552225",
+            //   "liability" => "21.571616",
+            //   "borrow_interest_paid_custody" => "0",
+            //   "borrow_interest_unpaid_liability" => "19391",
+            //   "custody" => "38062",
+            //   "health" => "2.006222443084368180",
+            //   "position" => "LONG",
+            //   "amm_pool_id" => 5,
+            //   "take_profit_price" => "0.000000000000000000",
+            //   "take_profit_borrow_factor" => "1.000000000000000000",
+            //   "funding_fee_paid_custody" => "81",
+            //   "funding_fee_received_custody" => "181",
+            //   "open_price" => "113500.890943575154101469",
+            //   "stop_loss_price" => "58169.206608582266477003",
+            //   "trading_asset_price" => "113668.427604308776796146",
+            //   "pnl" => array(
+            //     "denom" => "USDC",
+            //     "amount" => "0.153619"
+            //   ),
+            //   "effective_leverage" => "1.992036442801146611",
+            //   "liquidation_price" => "58022.183058726551416110",
+            //   "fees" => array(
+            //     "total_fees_base_currency" => "92099",
+            //     "borrow_interest_fees_liability_asset" => "0",
+            //     "borrow_interest_fees_base_currency" => "0",
+            //     "funding_fees_liquidity_asset" => "81",
+            //     "funding_fees_base_currency" => "92099"
+            //   ),
+            //   "id" => 125
+            // }
+            //
+            // This is actually a perpetual $position, not a traditional order
+            // We'll parse it order structure
+            $position = $this->safe_string($response, 'position'); // 'LONG' or 'SHORT'
+            $side = $position ? strtolower($position) : null;
+            $collateral = $this->safe_string($response, 'collateral');
+            $openPrice = $this->safe_string($response, 'open_price');
+            $orderId = $this->safe_string($response, 'id');
+            $stopLossPrice = $this->safe_string($response, 'stop_loss_price');
+            $takeProfitPrice = $this->safe_string($response, 'take_profit_price');
+            $cost = ($collateral && $openPrice) ? $this->number_to_string($this->parse_number($collateral) * $this->parse_number($openPrice)) : null;
+            return $this->safe_order(array(
+                'id' => $orderId,
+                'clientOrderId' => null,
+                'info' => $response,
+                'timestamp' => null,
+                'datetime' => null,
+                'lastTradeTimestamp' => null,
+                'symbol' => $symbol,
+                'type' => 'market', // perpetual positions are typically $market orders
+                'timeInForce' => null,
+                'postOnly' => null,
+                'side' => $side,
+                'amount' => $collateral, // using $collateral
+                'price' => $openPrice,
+                'stopPrice' => $stopLossPrice,
+                'triggerPrice' => null,
+                'takeProfitPrice' => $takeProfitPrice,
+                'cost' => $cost,
+                'average' => $openPrice,
+                'filled' => $collateral, // assuming $position is fully filled
+                'remaining' => '0', // perpetual positions are fully filled
+                'status' => 'closed', // this is an active $position, but in order terms it's "filled"
+                'fee' => null,
+                'trades' => null,
+            ), $market);
+        }) ();
+    }
+
+    public function fetch_orders(?string $symbol = null, ?int $since = null, ?int $limit = null, $params = array ()): PromiseInterface {
+        return Async\async(function () use ($symbol, $since, $limit, $params) {
+            /**
+             * fetch all orders (perpetual positions) for a $symbol
+             * @param {string} $symbol unified $market $symbol
+             * @param {int} [$since] the earliest time in ms to fetch orders for
+             * @param {int} [$limit] the maximum number of orders to return
+             * @param {array} [$params] extra parameters specific to the exchange API endpoint
+             * @param {string} [$params->address] optional $address to filter orders
+             * @return {Order[]} a list of $order structures
+             */
+            if ($symbol === null) {
+                throw new ArgumentsRequired($this->id . ' fetchOrders() requires a $symbol parameter');
+            }
+            Async\await($this->load_markets());
+            $market = $this->market($symbol);
+            $address = $this->safe_string($params, 'address');
+            $query = array(
+                'symbol' => $market['base'] . '-' . $market['quote'],
+            );
+            if ($address !== null) {
+                $query['address'] = $address;
+            }
+            $params = $this->omit($params, array( 'address' ));
+            $url = $this->urls['api']['public'] . '/v1/orders?' . $this->urlencode($query);
+            $response = Async\await($this->fetch($url, 'GET', null, null));
+            //
+            // array(
+            //   {
+            //     "collateral_asset" => "USDC",
+            //     "trading_asset" => "WBTC",
+            //     "liability_asset" => "USDC",
+            //     "custody_asset" => "WBTC",
+            //     "collateral" => "0.028661",
+            //     "liability" => "0.058045",
+            //     "borrow_interest_paid_custody" => "2486",
+            //     "borrow_interest_unpaid_liability" => "721",
+            //     "custody" => "42062",
+            //     "health" => "823.960724878386525358",
+            //     "position" => "LONG",
+            //     "amm_pool_id" => 5,
+            //     "take_profit_price" => "0.000000000000000000",
+            //     "take_profit_borrow_factor" => "1.000000000000000000",
+            //     "funding_fee_paid_custody" => "1767",
+            //     "funding_fee_received_custody" => "41984",
+            //     "open_price" => "107780.910665021660979213",
+            //     "stop_loss_price" => "74350.528603299143254436",
+            //     "trading_asset_price" => "113671.371393379478105303",
+            //     "pnl" => array(
+            //       "denom" => "USDC",
+            //       "amount" => "47.740094"
+            //     ),
+            //     "effective_leverage" => "1.001200013156294978",
+            //     "liquidation_price" => "139.649738172221958061",
+            //     "fees" => array(
+            //       "total_fees_base_currency" => "4835894",
+            //       "borrow_interest_fees_liability_asset" => "2486",
+            //       "borrow_interest_fees_base_currency" => "2826718",
+            //       "funding_fees_liquidity_asset" => "1767",
+            //       "funding_fees_base_currency" => "2009175"
+            //     ),
+            //     "id" => 2
+            //   }
+            // )
+            //
+            $result = array();
+            for ($i = 0; $i < count($response); $i++) {
+                $position = $response[$i];
+                // Parse each perpetual $position $order
+                $positionSide = $this->safe_string($position, 'position'); // 'LONG' or 'SHORT'
+                $side = $positionSide ? strtolower($positionSide) : null;
+                $collateral = $this->safe_string($position, 'collateral');
+                $openPrice = $this->safe_string($position, 'open_price');
+                $orderId = $this->safe_string($position, 'id');
+                $stopLossPrice = $this->safe_string($position, 'stop_loss_price');
+                $takeProfitPrice = $this->safe_string($position, 'take_profit_price');
+                $cost = ($collateral && $openPrice) ? $this->number_to_string($this->parse_number($collateral) * $this->parse_number($openPrice)) : null;
+                $order = $this->safe_order(array(
+                    'id' => $orderId,
+                    'clientOrderId' => null,
+                    'info' => $position,
+                    'timestamp' => null,
+                    'datetime' => null,
+                    'lastTradeTimestamp' => null,
+                    'symbol' => $symbol,
+                    'type' => 'market', // perpetual positions are typically $market orders
+                    'timeInForce' => null,
+                    'postOnly' => null,
+                    'side' => $side,
+                    'amount' => $collateral, // using $collateral
+                    'price' => $openPrice,
+                    'stopPrice' => $stopLossPrice,
+                    'triggerPrice' => null,
+                    'takeProfitPrice' => $takeProfitPrice,
+                    'cost' => $cost,
+                    'average' => $openPrice,
+                    'filled' => $collateral, // assuming $position is fully filled
+                    'remaining' => '0', // perpetual positions are fully filled
+                    'status' => 'closed', // this is an active $position, but in $order terms it's "filled"
+                    'fee' => null,
+                    'trades' => null,
+                ), $market);
+                $result[] = $order;
+            }
+            return $this->filter_by_since_limit($result, $since, $limit, 'timestamp');
+        }) ();
+    }
+
     public function parse_my_trade($trade, ?array $market = null): array {
         //
         // Perpetual position $trade:
@@ -724,6 +1205,93 @@ class elys extends Exchange {
             'cost' => $cost,
             'fee' => null, // fee information not directly available
             'takerOrMaker' => null,
+        ), $market);
+    }
+
+    public function parse_order($order, ?array $market = null): array {
+        //
+        // Perpetual Order:
+        // {
+        //   "order_id" => "24",
+        //   "owner_address" => "elys1wstfr2fx8h9tdxhs4wv4t8sjxdgrw6f9dpdpdf",
+        //   "position" => "LONG",
+        //   "trigger_price" => "0.000000000000000000",
+        //   "collateral_denom" => "USDC",
+        //   "collateral_value" => "4240.469631",
+        //   "leverage" => "3.000000000000000000",
+        //   "take_profit_price" => "0.000000000000000000",
+        //   "stop_loss_price" => "0.000000000000000000",
+        //   "pool_id" => "6",
+        //   "liquidation_price" => "2513.381153809520746186",
+        //   "funding_rate" => "0.000000000000000000",
+        //   "borrow_interest_rate" => "0.000000000000000000",
+        //   "position_size_denom" => "ETH",
+        //   "position_size_value" => "3.457635083"
+        // }
+        //
+        // Spot Order:
+        // {
+        //   "order_amount" => "string",
+        //   "order_denom" => "string",
+        //   "order_id" => 0,
+        //   "order_price" => null,
+        //   "order_target_denom" => "string",
+        //   "order_type" => "string",
+        //   "owner_address" => "string",
+        //   "status" => "string"
+        // }
+        //
+        $id = $this->safe_string($order, 'order_id');
+        $symbol = $market ? $market['symbol'] : null;
+        // Check if it's a perpetual $order (has $position field) or spot $order (has order_type field)
+        $isPerpetual = (is_array($order) && array_key_exists('position', $order));
+        if ($isPerpetual) {
+            // Perpetual $order
+            $position = $this->safe_string($order, 'position'); // 'LONG' or 'SHORT'
+            $side = $position ? strtolower($position) : null;
+            $amount = $this->safe_string($order, 'position_size_value');
+            $triggerPrice = $this->safe_string($order, 'trigger_price');
+            $price = ($triggerPrice && $triggerPrice !== '0.000000000000000000') ? $triggerPrice : null;
+            $type = $price ? 'limit' : 'market';
+            $status = 'open'; // perpetual orders are pending/open
+        } else {
+            // Spot $order
+            $orderType = $this->safe_string($order, 'order_type');
+            $side = ($orderType === 'MARKETBUY' || $orderType === 'LIMITBUY') ? 'buy' : 'sell';
+            $amount = $this->safe_string($order, 'order_amount');
+            $price = $this->safe_string($order, 'order_price');
+            if ($orderType && mb_strpos($orderType, 'MARKET') !== false) {
+                $type = 'market';
+            } else {
+                $type = 'limit';
+            }
+            $status = $this->safe_string($order, 'status', 'open');
+        }
+        $cost = ($amount && $price) ? $this->number_to_string($this->parse_number($amount) * $this->parse_number($price)) : null;
+        return $this->safe_order(array(
+            'id' => $id,
+            'clientOrderId' => null,
+            'info' => $order,
+            'timestamp' => null,
+            'datetime' => null,
+            'lastTradeTimestamp' => null,
+            'symbol' => $symbol,
+            'type' => $type,
+            'timeInForce' => null,
+            'postOnly' => null,
+            'side' => $side,
+            'amount' => $amount,
+            'price' => $price,
+            'stopPrice' => $isPerpetual ? $this->safe_string($order, 'stop_loss_price') : null,
+            'triggerPrice' => $isPerpetual ? $this->safe_string($order, 'trigger_price') : null,
+            'takeProfitPrice' => $isPerpetual ? $this->safe_string($order, 'take_profit_price') : null,
+            'cost' => $cost,
+            'average' => null,
+            'filled' => null,
+            'remaining' => $amount,
+            'status' => $status,
+            'fee' => null,
+            'trades' => null,
         ), $market);
     }
 }

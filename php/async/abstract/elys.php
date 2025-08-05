@@ -16,6 +16,24 @@ abstract class elys extends \ccxt\async\Exchange {
     public function public_get_v1_tickers($params = array()) {
         return $this->request('v1/tickers', 'public', 'GET', $params, null, null, array("cost" => 1));
     }
+    public function public_get_v1_funding_rates($params = array()) {
+        return $this->request('v1/funding-rates', 'public', 'GET', $params, null, null, array("cost" => 1));
+    }
+    public function public_get_v1_orders_open($params = array()) {
+        return $this->request('v1/orders/open', 'public', 'GET', $params, null, null, array("cost" => 1));
+    }
+    public function public_get_v1_orders($params = array()) {
+        return $this->request('v1/orders', 'public', 'GET', $params, null, null, array("cost" => 1));
+    }
+    public function public_get_v1_order($params = array()) {
+        return $this->request('v1/order', 'public', 'GET', $params, null, null, array("cost" => 1));
+    }
+    public function public_get_v1_open_interest($params = array()) {
+        return $this->request('v1/open-interest', 'public', 'GET', $params, null, null, array("cost" => 1));
+    }
+    public function public_get_trades_address_symbol_size_from($params = array()) {
+        return $this->request('trades/{address}/{symbol}/{size}/{from}', 'public', 'GET', $params, null, null, array("cost" => 1));
+    }
     public function publicGetV1Currencies($params = array()) {
         return $this->request('v1/currencies', 'public', 'GET', $params, null, null, array("cost" => 1));
     }
@@ -24,5 +42,23 @@ abstract class elys extends \ccxt\async\Exchange {
     }
     public function publicGetV1Tickers($params = array()) {
         return $this->request('v1/tickers', 'public', 'GET', $params, null, null, array("cost" => 1));
+    }
+    public function publicGetV1FundingRates($params = array()) {
+        return $this->request('v1/funding-rates', 'public', 'GET', $params, null, null, array("cost" => 1));
+    }
+    public function publicGetV1OrdersOpen($params = array()) {
+        return $this->request('v1/orders/open', 'public', 'GET', $params, null, null, array("cost" => 1));
+    }
+    public function publicGetV1Orders($params = array()) {
+        return $this->request('v1/orders', 'public', 'GET', $params, null, null, array("cost" => 1));
+    }
+    public function publicGetV1Order($params = array()) {
+        return $this->request('v1/order', 'public', 'GET', $params, null, null, array("cost" => 1));
+    }
+    public function publicGetV1OpenInterest($params = array()) {
+        return $this->request('v1/open-interest', 'public', 'GET', $params, null, null, array("cost" => 1));
+    }
+    public function publicGetTradesAddressSymbolSizeFrom($params = array()) {
+        return $this->request('trades/{address}/{symbol}/{size}/{from}', 'public', 'GET', $params, null, null, array("cost" => 1));
     }
 }

@@ -6,7 +6,7 @@
 from ccxt.base.exchange import Exchange
 from ccxt.abstract.elys import ImplicitAPI
 import math
-from ccxt.base.types import Any, Balances, Currencies, Int, Market, Strings, Ticker, Tickers, Trade
+from ccxt.base.types import Any, Balances, Currencies, Int, Market, Order, Strings, Ticker, Tickers, FundingRate, OpenInterest, FundingRates, Trade
 from typing import List
 from ccxt.base.errors import ArgumentsRequired
 from ccxt.base.decimal_to_precision import TICK_SIZE
@@ -71,7 +71,7 @@ class elys(Exchange, ImplicitAPI):
                 'fetchFundingHistory': False,
                 'fetchFundingRate': False,
                 'fetchFundingRateHistory': False,
-                'fetchFundingRates': False,
+                'fetchFundingRates': True,
                 'fetchIndexOHLCV': False,
                 'fetchIsolatedBorrowRate': False,
                 'fetchIsolatedBorrowRates': False,
@@ -86,13 +86,13 @@ class elys(Exchange, ImplicitAPI):
                 'fetchMyLiquidations': False,
                 'fetchMyTrades': True,
                 'fetchOHLCV': True,
-                'fetchOpenInterest': False,
+                'fetchOpenInterest': True,
                 'fetchOpenInterestHistory': False,
                 'fetchOpenInterests': False,
-                'fetchOpenOrders': False,
-                'fetchOrder': False,
+                'fetchOpenOrders': True,
+                'fetchOrder': True,
                 'fetchOrderBook': False,
-                'fetchOrders': False,
+                'fetchOrders': True,
                 'fetchOrderTrades': False,
                 'fetchPosition': False,
                 'fetchPositionMode': False,
@@ -102,7 +102,7 @@ class elys(Exchange, ImplicitAPI):
                 'fetchTicker': 'emulated',
                 'fetchTickers': True,
                 'fetchTime': False,
-                'fetchTrades': False,
+                'fetchTrades': True,
                 'fetchTradingFee': False,
                 'fetchTradingFees': False,
                 'fetchTransfer': False,
@@ -146,6 +146,12 @@ class elys(Exchange, ImplicitAPI):
                         'v1/currencies': 1,
                         'v1/markets': 1,
                         'v1/tickers': 1,
+                        'v1/funding-rates': 1,
+                        'v1/orders/open': 1,
+                        'v1/orders': 1,
+                        'v1/order': 1,
+                        'v1/open-interest': 1,
+                        'trades/{address}/{symbol}/{size}/{from}': 1,
                     },
                 },
             },
@@ -428,6 +434,113 @@ class elys(Exchange, ImplicitAPI):
             'info': ticker,
         }, market)
 
+    def fetch_funding_rates(self, symbols: Strings = None, params={}) -> FundingRates:
+        """
+        fetch the funding rates for multiple markets
+        :param str[]|None symbols: unified symbols of the markets to fetch the funding rates for, all market funding rates are returned if not assigned
+        :param dict [params]: extra parameters specific to the exchange API endpoint
+        :returns dict: a dictionary of funding rates structures
+        """
+        self.load_markets()
+        url = self.urls['api']['public'] + '/v1/funding-rates'
+        response = self.fetch(url, 'GET', None, None)
+        #
+        # [
+        #   {
+        #     "symbol": "ATOM-USDC",
+        #     "funding_rate": "-0.117462885648393966",
+        #     "long_rate": "-0.189599831252923122",
+        #     "short_rate": "0.117462885648393966",
+        #     "timestamp": 1754361530209
+        #   }
+        # ]
+        #
+        result: dict = {}
+        for i in range(0, len(response)):
+            fundingRate = self.parse_funding_rate(response[i])
+            symbol = fundingRate['symbol']
+            result[symbol] = fundingRate
+        return self.filter_by_array(result, 'symbol', symbols)
+
+    def fetch_open_interest(self, symbol: str, params={}) -> OpenInterest:
+        """
+        fetch the open interest for a symbol
+        :param str symbol: unified market symbol
+        :param dict [params]: extra parameters specific to the exchange API endpoint
+        :returns dict: an open interest structure
+        """
+        self.load_markets()
+        market = self.market(symbol)
+        query: dict = {
+            'symbol': market['base'] + '-' + market['quote'],
+        }
+        url = self.urls['api']['public'] + '/v1/open-interest?' + self.urlencode(query)
+        response = self.fetch(url, 'GET', None, None)
+        #
+        # {
+        #   "openInterest": "-341.19996",
+        #   "symbol": "ATOM-USDC",
+        #   "time": 1754427059775
+        # }
+        #
+        return self.parse_open_interest(response, market)
+
+    def parse_funding_rate(self, fundingRate, market: Market = None) -> FundingRate:
+        #
+        # {
+        #   "symbol": "ATOM-USDC",
+        #   "funding_rate": "-0.117462885648393966",
+        #   "long_rate": "-0.189599831252923122",
+        #   "short_rate": "0.117462885648393966",
+        #   "timestamp": 1754361530209
+        # }
+        #
+        marketId = self.safe_string(fundingRate, 'symbol')
+        symbol = self.safe_symbol(marketId, market, '-')
+        timestamp = self.safe_integer(fundingRate, 'timestamp')
+        rate = self.safe_string(fundingRate, 'funding_rate')
+        return {
+            'info': fundingRate,
+            'symbol': symbol,
+            'markPrice': None,
+            'indexPrice': None,
+            'interestRate': None,
+            'estimatedSettlePrice': None,
+            'timestamp': timestamp,
+            'datetime': self.iso8601(timestamp),
+            'fundingRate': self.parse_number(rate),
+            'fundingTimestamp': timestamp,
+            'fundingDatetime': self.iso8601(timestamp),
+            'nextFundingRate': None,
+            'nextFundingTimestamp': None,
+            'nextFundingDatetime': None,
+            'previousFundingRate': None,
+            'previousFundingTimestamp': None,
+            'previousFundingDatetime': None,
+        }
+
+    def parse_open_interest(self, openInterest, market: Market = None) -> OpenInterest:
+        #
+        # {
+        #   "openInterest": "-341.19996",
+        #   "symbol": "ATOM-USDC",
+        #   "time": 1754427059775
+        # }
+        #
+        marketId = self.safe_string(openInterest, 'symbol')
+        symbol = self.safe_symbol(marketId, market, '-')
+        openInterestAmount = self.safe_string(openInterest, 'openInterest')
+        timestamp = self.safe_integer(openInterest, 'time')
+        return {
+            'symbol': symbol,
+            'baseVolume': self.parse_number(openInterestAmount),
+            'quoteVolume': None,
+            'openInterestAmount': self.parse_number(openInterestAmount),
+            'timestamp': timestamp,
+            'datetime': self.iso8601(timestamp),
+            'info': openInterest,
+        }
+
     def fetch_ohlcv(self, symbol: str, timeframe='1m', since: Int = None, limit: Int = None, params={}) -> List[list]:
         """
         fetches historical candlestick data containing the open, high, low, and close price, and the volume of a market
@@ -617,6 +730,339 @@ class elys(Exchange, ImplicitAPI):
             result.append(trade)
         return self.filter_by_since_limit(result, since, limit, 'timestamp')
 
+    def fetch_trades(self, symbol: str = None, since: Int = None, limit: Int = None, params={}) -> List[Trade]:
+        """
+        fetch historical trades for a symbol
+        :param str symbol: unified market symbol
+        :param int [since]: the earliest time in ms to fetch trades for
+        :param int [limit]: the maximum number of trades to return
+        :param dict [params]: extra parameters specific to the exchange API endpoint
+        :param str params['address']: the wallet address to fetch trades for(required)
+        :param int [params.from]: pagination offset, defaults to 0
+        :returns Trade[]: a list of trade structures
+        """
+        if symbol is None:
+            raise ArgumentsRequired(self.id + ' fetchTrades() requires a symbol parameter')
+        self.load_markets()
+        market = self.market(symbol)
+        address = self.safe_string(params, 'address')
+        if address is None:
+            raise ArgumentsRequired(self.id + ' fetchTrades() requires an address parameter')
+        fromParam = self.safe_string(params, 'from', '0')
+        size = self.safe_string(params, 'size', str(limit) if limit else '100')
+        params = self.omit(params, ['address', 'from', 'size'])
+        # Convert symbol to API format(base-quote)
+        symbolId = market['base'] + '-' + market['quote']
+        path = 'trades/' + address + '/' + symbolId + '/' + size + '/' + fromParam
+        url = self.urls['api']['public'] + '/' + path
+        response = self.fetch(url, 'GET', None, None)
+        #
+        # {
+        #     "perpetual_position": [
+        #         {
+        #             "type": "perpetual_mtp_open",
+        #             "mtp_id": "64",
+        #             "owner": "elys1u8c28343vvhwgwhf29w6hlcz73hvq7lwxmrl46",
+        #             "position": "SHORT",
+        #             "amm_pool_id": "1",
+        #             "collateral_asset": "USDC",
+        #             "collateral": "19.754485",
+        #             "open_price": "4.345121747801747801",
+        #             "created_at": "2025-07-30T21:44:56.048Z",
+        #             "txhash": "68582DF04AE7F04302F66D937B18E2B7B181664A7C01247689473DA746DBC153"
+        #         }
+        #     ],
+        #     "spot_orders": [
+        #         {
+        #             "type": "tradeshield_execute_market_buy_spot_order",
+        #             "order_type": "MARKETBUY",
+        #             "order_id": "0",
+        #             "order_price": "5.354117447312775000",
+        #             "order_amount": {
+        #                 "denom": "ATOM",
+        #                 "amount": "1"
+        #             },
+        #             "owner_address": "elys1u8c28343vvhwgwhf29w6hlcz73hvq7lwxmrl46",
+        #             "created_at": "2025-05-12T12:40:38.309Z",
+        #             "txhash": "7C8555767E7D8D492B62E132108EC4CE26DAC8D78F008611A5AE3C1FD3D2DCD5"
+        #         }
+        #     ]
+        # }
+        #
+        result = []
+        # Process perpetual position trades
+        perpetualPositions = self.safe_list(response, 'perpetual_position', [])
+        for i in range(0, len(perpetualPositions)):
+            trade = self.parse_my_trade(perpetualPositions[i], market)
+            result.append(trade)
+        # Process spot order trades
+        spotOrders = self.safe_list(response, 'spot_orders', [])
+        for i in range(0, len(spotOrders)):
+            trade = self.parse_my_trade(spotOrders[i], market)
+            result.append(trade)
+        return self.filter_by_since_limit(result, since, limit, 'timestamp')
+
+    def fetch_open_orders(self, symbol: str = None, since: Int = None, limit: Int = None, params={}) -> List[Order]:
+        """
+        fetch open orders for a symbol
+        :param str symbol: unified market symbol
+        :param int [since]: the earliest time in ms to fetch orders for
+        :param int [limit]: the maximum number of orders to return
+        :param dict [params]: extra parameters specific to the exchange API endpoint
+        :param str [params.address]: the wallet address to fetch orders for
+        :returns Order[]: a list of order structures
+        """
+        if symbol is None:
+            raise ArgumentsRequired(self.id + ' fetchOpenOrders() requires a symbol parameter')
+        self.load_markets()
+        market = self.market(symbol)
+        address = self.safe_string(params, 'address')
+        query: dict = {
+            'symbol': market['base'] + '-' + market['quote'],
+        }
+        if address is not None:
+            query['address'] = address
+        params = self.omit(params, ['address'])
+        url = self.urls['api']['public'] + '/v1/orders/open?' + self.urlencode(query)
+        response = self.fetch(url, 'GET', None, None)
+        #
+        # {
+        #   "pending_spot_orders": null,
+        #   "pending_perpetual_orders": [
+        #     {
+        #       "order_id": "24",
+        #       "owner_address": "elys1wstfr2fx8h9tdxhs4wv4t8sjxdgrw6f9dpdpdf",
+        #       "position": "LONG",
+        #       "trigger_price": "0.000000000000000000",
+        #       "collateral_denom": "USDC",
+        #       "collateral_value": "4240.469631",
+        #       "leverage": "3.000000000000000000",
+        #       "take_profit_price": "0.000000000000000000",
+        #       "stop_loss_price": "0.000000000000000000",
+        #       "pool_id": "6",
+        #       "liquidation_price": "2513.381153809520746186",
+        #       "funding_rate": "0.000000000000000000",
+        #       "borrow_interest_rate": "0.000000000000000000",
+        #       "position_size_denom": "ETH",
+        #       "position_size_value": "3.457635083"
+        #     }
+        #   ]
+        # }
+        #
+        result = []
+        # Process pending spot orders
+        spotOrders = self.safe_list(response, 'pending_spot_orders', [])
+        for i in range(0, len(spotOrders)):
+            order = self.parse_order(spotOrders[i], market)
+            result.append(order)
+        # Process pending perpetual orders
+        perpetualOrders = self.safe_list(response, 'pending_perpetual_orders', [])
+        for i in range(0, len(perpetualOrders)):
+            order = self.parse_order(perpetualOrders[i], market)
+            result.append(order)
+        return self.filter_by_since_limit(result, since, limit, 'timestamp')
+
+    def fetch_order(self, id: str, symbol: str = None, params={}) -> Order:
+        """
+        fetch a specific order by id
+        :param str id: order id
+        :param str symbol: unified market symbol
+        :param dict [params]: extra parameters specific to the exchange API endpoint
+        :param str params['address']: the wallet address that owns the order(required)
+        :returns dict: an order structure
+        """
+        if id is None:
+            raise ArgumentsRequired(self.id + ' fetchOrder() requires an id parameter')
+        if symbol is None:
+            raise ArgumentsRequired(self.id + ' fetchOrder() requires a symbol parameter')
+        self.load_markets()
+        market = self.market(symbol)
+        address = self.safe_string(params, 'address')
+        if address is None:
+            raise ArgumentsRequired(self.id + ' fetchOrder() requires an address parameter')
+        query: dict = {
+            'id': id,
+            'symbol': market['base'] + '-' + market['quote'],
+            'address': address,
+        }
+        params = self.omit(params, ['address'])
+        url = self.urls['api']['public'] + '/v1/order?' + self.urlencode(query)
+        response = self.fetch(url, 'GET', None, None)
+        #
+        # {
+        #   "collateral_asset": "USDC",
+        #   "trading_asset": "WBTC",
+        #   "liability_asset": "USDC",
+        #   "custody_asset": "WBTC",
+        #   "collateral": "21.552225",
+        #   "liability": "21.571616",
+        #   "borrow_interest_paid_custody": "0",
+        #   "borrow_interest_unpaid_liability": "19391",
+        #   "custody": "38062",
+        #   "health": "2.006222443084368180",
+        #   "position": "LONG",
+        #   "amm_pool_id": 5,
+        #   "take_profit_price": "0.000000000000000000",
+        #   "take_profit_borrow_factor": "1.000000000000000000",
+        #   "funding_fee_paid_custody": "81",
+        #   "funding_fee_received_custody": "181",
+        #   "open_price": "113500.890943575154101469",
+        #   "stop_loss_price": "58169.206608582266477003",
+        #   "trading_asset_price": "113668.427604308776796146",
+        #   "pnl": {
+        #     "denom": "USDC",
+        #     "amount": "0.153619"
+        #   },
+        #   "effective_leverage": "1.992036442801146611",
+        #   "liquidation_price": "58022.183058726551416110",
+        #   "fees": {
+        #     "total_fees_base_currency": "92099",
+        #     "borrow_interest_fees_liability_asset": "0",
+        #     "borrow_interest_fees_base_currency": "0",
+        #     "funding_fees_liquidity_asset": "81",
+        #     "funding_fees_base_currency": "92099"
+        #   },
+        #   "id": 125
+        # }
+        #
+        # This is actually a perpetual position, not a traditional order
+        # We'll parse it order structure
+        position = self.safe_string(response, 'position')  # 'LONG' or 'SHORT'
+        side = position.lower() if position else None
+        collateral = self.safe_string(response, 'collateral')
+        openPrice = self.safe_string(response, 'open_price')
+        orderId = self.safe_string(response, 'id')
+        stopLossPrice = self.safe_string(response, 'stop_loss_price')
+        takeProfitPrice = self.safe_string(response, 'take_profit_price')
+        cost = self.number_to_string(self.parse_number(collateral) * self.parse_number(openPrice)) if (collateral and openPrice) else None
+        return self.safe_order({
+            'id': orderId,
+            'clientOrderId': None,
+            'info': response,
+            'timestamp': None,
+            'datetime': None,
+            'lastTradeTimestamp': None,
+            'symbol': symbol,
+            'type': 'market',  # perpetual positions are typically market orders
+            'timeInForce': None,
+            'postOnly': None,
+            'side': side,
+            'amount': collateral,  # using collateral
+            'price': openPrice,
+            'stopPrice': stopLossPrice,
+            'triggerPrice': None,
+            'takeProfitPrice': takeProfitPrice,
+            'cost': cost,
+            'average': openPrice,
+            'filled': collateral,  # assuming position is fully filled
+            'remaining': '0',  # perpetual positions are fully filled
+            'status': 'closed',  # self is an active position, but in order terms it's "filled"
+            'fee': None,
+            'trades': None,
+        }, market)
+
+    def fetch_orders(self, symbol: str = None, since: Int = None, limit: Int = None, params={}) -> List[Order]:
+        """
+        fetch all orders(perpetual positions) for a symbol
+        :param str symbol: unified market symbol
+        :param int [since]: the earliest time in ms to fetch orders for
+        :param int [limit]: the maximum number of orders to return
+        :param dict [params]: extra parameters specific to the exchange API endpoint
+        :param str [params.address]: optional address to filter orders
+        :returns Order[]: a list of order structures
+        """
+        if symbol is None:
+            raise ArgumentsRequired(self.id + ' fetchOrders() requires a symbol parameter')
+        self.load_markets()
+        market = self.market(symbol)
+        address = self.safe_string(params, 'address')
+        query: dict = {
+            'symbol': market['base'] + '-' + market['quote'],
+        }
+        if address is not None:
+            query['address'] = address
+        params = self.omit(params, ['address'])
+        url = self.urls['api']['public'] + '/v1/orders?' + self.urlencode(query)
+        response = self.fetch(url, 'GET', None, None)
+        #
+        # [
+        #   {
+        #     "collateral_asset": "USDC",
+        #     "trading_asset": "WBTC",
+        #     "liability_asset": "USDC",
+        #     "custody_asset": "WBTC",
+        #     "collateral": "0.028661",
+        #     "liability": "0.058045",
+        #     "borrow_interest_paid_custody": "2486",
+        #     "borrow_interest_unpaid_liability": "721",
+        #     "custody": "42062",
+        #     "health": "823.960724878386525358",
+        #     "position": "LONG",
+        #     "amm_pool_id": 5,
+        #     "take_profit_price": "0.000000000000000000",
+        #     "take_profit_borrow_factor": "1.000000000000000000",
+        #     "funding_fee_paid_custody": "1767",
+        #     "funding_fee_received_custody": "41984",
+        #     "open_price": "107780.910665021660979213",
+        #     "stop_loss_price": "74350.528603299143254436",
+        #     "trading_asset_price": "113671.371393379478105303",
+        #     "pnl": {
+        #       "denom": "USDC",
+        #       "amount": "47.740094"
+        #     },
+        #     "effective_leverage": "1.001200013156294978",
+        #     "liquidation_price": "139.649738172221958061",
+        #     "fees": {
+        #       "total_fees_base_currency": "4835894",
+        #       "borrow_interest_fees_liability_asset": "2486",
+        #       "borrow_interest_fees_base_currency": "2826718",
+        #       "funding_fees_liquidity_asset": "1767",
+        #       "funding_fees_base_currency": "2009175"
+        #     },
+        #     "id": 2
+        #   }
+        # ]
+        #
+        result = []
+        for i in range(0, len(response)):
+            position = response[i]
+            # Parse each perpetual position order
+            positionSide = self.safe_string(position, 'position')  # 'LONG' or 'SHORT'
+            side = positionSide.lower() if positionSide else None
+            collateral = self.safe_string(position, 'collateral')
+            openPrice = self.safe_string(position, 'open_price')
+            orderId = self.safe_string(position, 'id')
+            stopLossPrice = self.safe_string(position, 'stop_loss_price')
+            takeProfitPrice = self.safe_string(position, 'take_profit_price')
+            cost = self.number_to_string(self.parse_number(collateral) * self.parse_number(openPrice)) if (collateral and openPrice) else None
+            order = self.safe_order({
+                'id': orderId,
+                'clientOrderId': None,
+                'info': position,
+                'timestamp': None,
+                'datetime': None,
+                'lastTradeTimestamp': None,
+                'symbol': symbol,
+                'type': 'market',  # perpetual positions are typically market orders
+                'timeInForce': None,
+                'postOnly': None,
+                'side': side,
+                'amount': collateral,  # using collateral
+                'price': openPrice,
+                'stopPrice': stopLossPrice,
+                'triggerPrice': None,
+                'takeProfitPrice': takeProfitPrice,
+                'cost': cost,
+                'average': openPrice,
+                'filled': collateral,  # assuming position is fully filled
+                'remaining': '0',  # perpetual positions are fully filled
+                'status': 'closed',  # self is an active position, but in order terms it's "filled"
+                'fee': None,
+                'trades': None,
+            }, market)
+            result.append(order)
+        return self.filter_by_since_limit(result, since, limit, 'timestamp')
+
     def parse_my_trade(self, trade, market: Market = None) -> Trade:
         #
         # Perpetual position trade:
@@ -692,4 +1138,93 @@ class elys(Exchange, ImplicitAPI):
             'cost': cost,
             'fee': None,  # fee information not directly available
             'takerOrMaker': None,
+        }, market)
+
+    def parse_order(self, order, market: Market = None) -> Order:
+        #
+        # Perpetual Order:
+        # {
+        #   "order_id": "24",
+        #   "owner_address": "elys1wstfr2fx8h9tdxhs4wv4t8sjxdgrw6f9dpdpdf",
+        #   "position": "LONG",
+        #   "trigger_price": "0.000000000000000000",
+        #   "collateral_denom": "USDC",
+        #   "collateral_value": "4240.469631",
+        #   "leverage": "3.000000000000000000",
+        #   "take_profit_price": "0.000000000000000000",
+        #   "stop_loss_price": "0.000000000000000000",
+        #   "pool_id": "6",
+        #   "liquidation_price": "2513.381153809520746186",
+        #   "funding_rate": "0.000000000000000000",
+        #   "borrow_interest_rate": "0.000000000000000000",
+        #   "position_size_denom": "ETH",
+        #   "position_size_value": "3.457635083"
+        # }
+        #
+        # Spot Order:
+        # {
+        #   "order_amount": "string",
+        #   "order_denom": "string",
+        #   "order_id": 0,
+        #   "order_price": null,
+        #   "order_target_denom": "string",
+        #   "order_type": "string",
+        #   "owner_address": "string",
+        #   "status": "string"
+        # }
+        #
+        id = self.safe_string(order, 'order_id')
+        symbol = market['symbol'] if market else None
+        # Check if it's a perpetual order(has position field) or spot order(has order_type field)
+        isPerpetual = ('position' in order)
+        side: str
+        amount: str
+        price: str
+        type: str
+        status: str
+        if isPerpetual:
+            # Perpetual order
+            position = self.safe_string(order, 'position')  # 'LONG' or 'SHORT'
+            side = position.lower() if position else None
+            amount = self.safe_string(order, 'position_size_value')
+            triggerPrice = self.safe_string(order, 'trigger_price')
+            price = triggerPrice if (triggerPrice and triggerPrice != '0.000000000000000000') else None
+            type = 'limit' if price else 'market'
+            status = 'open'  # perpetual orders are pending/open
+        else:
+            # Spot order
+            orderType = self.safe_string(order, 'order_type')
+            side = 'buy' if (orderType == 'MARKETBUY' or orderType == 'LIMITBUY') else 'sell'
+            amount = self.safe_string(order, 'order_amount')
+            price = self.safe_string(order, 'order_price')
+            if orderType and orderType.find('MARKET') >= 0:
+                type = 'market'
+            else:
+                type = 'limit'
+            status = self.safe_string(order, 'status', 'open')
+        cost = self.number_to_string(self.parse_number(amount) * self.parse_number(price)) if (amount and price) else None
+        return self.safe_order({
+            'id': id,
+            'clientOrderId': None,
+            'info': order,
+            'timestamp': None,
+            'datetime': None,
+            'lastTradeTimestamp': None,
+            'symbol': symbol,
+            'type': type,
+            'timeInForce': None,
+            'postOnly': None,
+            'side': side,
+            'amount': amount,
+            'price': price,
+            'stopPrice': self.safe_string(order, 'stop_loss_price') if isPerpetual else None,
+            'triggerPrice': self.safe_string(order, 'trigger_price') if isPerpetual else None,
+            'takeProfitPrice': self.safe_string(order, 'take_profit_price') if isPerpetual else None,
+            'cost': cost,
+            'average': None,
+            'filled': None,
+            'remaining': amount,
+            'status': status,
+            'fee': None,
+            'trades': None,
         }, market)

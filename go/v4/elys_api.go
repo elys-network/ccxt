@@ -18,3 +18,27 @@ func (this *elys) PublicGetV1Markets (args ...interface{}) <-chan interface{} {
 func (this *elys) PublicGetV1Tickers (args ...interface{}) <-chan interface{} {
    return this.callEndpointAsync("publicGetV1Tickers", args...)
 }
+
+func (this *elys) PublicGetV1FundingRates (args ...interface{}) <-chan interface{} {
+   return this.callEndpointAsync("publicGetV1FundingRates", args...)
+}
+
+func (this *elys) PublicGetV1OrdersOpen (args ...interface{}) <-chan interface{} {
+   return this.callEndpointAsync("publicGetV1OrdersOpen", args...)
+}
+
+func (this *elys) PublicGetV1Orders (args ...interface{}) <-chan interface{} {
+   return this.callEndpointAsync("publicGetV1Orders", args...)
+}
+
+func (this *elys) PublicGetV1Order (args ...interface{}) <-chan interface{} {
+   return this.callEndpointAsync("publicGetV1Order", args...)
+}
+
+func (this *elys) PublicGetV1OpenInterest (args ...interface{}) <-chan interface{} {
+   return this.callEndpointAsync("publicGetV1OpenInterest", args...)
+}
+
+func (this *elys) PublicGetTradesAddressSymbolSizeFrom (args ...interface{}) <-chan interface{} {
+   return this.callEndpointAsync("publicGetTradesAddressSymbolSizeFrom", args...)
+}

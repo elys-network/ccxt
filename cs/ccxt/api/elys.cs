@@ -26,4 +26,34 @@ public partial class elys : Exchange
         return await this.callAsync ("publicGetV1Tickers",parameters);
     }
 
+    public async Task<object> publicGetV1FundingRates (object parameters = null)
+    {
+        return await this.callAsync ("publicGetV1FundingRates",parameters);
+    }
+
+    public async Task<object> publicGetV1OrdersOpen (object parameters = null)
+    {
+        return await this.callAsync ("publicGetV1OrdersOpen",parameters);
+    }
+
+    public async Task<object> publicGetV1Orders (object parameters = null)
+    {
+        return await this.callAsync ("publicGetV1Orders",parameters);
+    }
+
+    public async Task<object> publicGetV1Order (object parameters = null)
+    {
+        return await this.callAsync ("publicGetV1Order",parameters);
+    }
+
+    public async Task<object> publicGetV1OpenInterest (object parameters = null)
+    {
+        return await this.callAsync ("publicGetV1OpenInterest",parameters);
+    }
+
+    public async Task<object> publicGetTradesAddressSymbolSizeFrom (object parameters = null)
+    {
+        return await this.callAsync ("publicGetTradesAddressSymbolSizeFrom",parameters);
+    }
+
 }

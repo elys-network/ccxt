@@ -3,7 +3,7 @@
 import Exchange from './abstract/elys.js';
 import { ArgumentsRequired } from './base/errors.js';
 import { TICK_SIZE } from './base/functions/number.js';
-import type { Market, Balances, Int, OHLCV, Strings, Dict, Currencies, Ticker, Tickers, Trade } from './base/types.js';
+import type { Market, Balances, Int, OHLCV, Strings, Dict, Currencies, Ticker, Tickers, Trade, FundingRate, FundingRates, Order, OpenInterest } from './base/types.js';
 
 //  ---------------------------------------------------------------------------
 
@@ -69,7 +69,7 @@ export default class elys extends Exchange {
                 'fetchFundingHistory': false,
                 'fetchFundingRate': false,
                 'fetchFundingRateHistory': false,
-                'fetchFundingRates': false,
+                'fetchFundingRates': true,
                 'fetchIndexOHLCV': false,
                 'fetchIsolatedBorrowRate': false,
                 'fetchIsolatedBorrowRates': false,
@@ -84,13 +84,13 @@ export default class elys extends Exchange {
                 'fetchMyLiquidations': false,
                 'fetchMyTrades': true,
                 'fetchOHLCV': true,
-                'fetchOpenInterest': false,
+                'fetchOpenInterest': true,
                 'fetchOpenInterestHistory': false,
                 'fetchOpenInterests': false,
-                'fetchOpenOrders': false,
-                'fetchOrder': false,
+                'fetchOpenOrders': true,
+                'fetchOrder': true,
                 'fetchOrderBook': false,
-                'fetchOrders': false,
+                'fetchOrders': true,
                 'fetchOrderTrades': false,
                 'fetchPosition': false,
                 'fetchPositionMode': false,
@@ -100,7 +100,7 @@ export default class elys extends Exchange {
                 'fetchTicker': 'emulated',
                 'fetchTickers': true,
                 'fetchTime': false,
-                'fetchTrades': false,
+                'fetchTrades': true,
                 'fetchTradingFee': false,
                 'fetchTradingFees': false,
                 'fetchTransfer': false,
@@ -144,6 +144,12 @@ export default class elys extends Exchange {
                         'v1/currencies': 1,
                         'v1/markets': 1,
                         'v1/tickers': 1,
+                        'v1/funding-rates': 1,
+                        'v1/orders/open': 1,
+                        'v1/orders': 1,
+                        'v1/order': 1,
+                        'v1/open-interest': 1,
+                        'trades/{address}/{symbol}/{size}/{from}': 1,
                     },
                 },
             },
@@ -446,6 +452,122 @@ export default class elys extends Exchange {
 
     /**
      * @method
+     * @name elys#fetchFundingRates
+     * @description fetch the funding rates for multiple markets
+     * @param {string[]|undefined} symbols unified symbols of the markets to fetch the funding rates for, all market funding rates are returned if not assigned
+     * @param {object} [params] extra parameters specific to the exchange API endpoint
+     * @returns {object} a dictionary of funding rates structures
+     */
+    async fetchFundingRates (symbols: Strings = undefined, params = {}): Promise<FundingRates> {
+        await this.loadMarkets ();
+        const url = this.urls['api']['public'] + '/v1/funding-rates';
+        const response = await this.fetch (url, 'GET', undefined, undefined);
+        //
+        // [
+        //   {
+        //     "symbol": "ATOM-USDC",
+        //     "funding_rate": "-0.117462885648393966",
+        //     "long_rate": "-0.189599831252923122",
+        //     "short_rate": "0.117462885648393966",
+        //     "timestamp": 1754361530209
+        //   }
+        // ]
+        //
+        const result: Dict = {};
+        for (let i = 0; i < response.length; i++) {
+            const fundingRate = this.parseFundingRate (response[i]);
+            const symbol = fundingRate['symbol'];
+            result[symbol] = fundingRate;
+        }
+        return this.filterByArray (result, 'symbol', symbols);
+    }
+
+    /**
+     * @method
+     * @name elys#fetchOpenInterest
+     * @description fetch the open interest for a symbol
+     * @param {string} symbol unified market symbol
+     * @param {object} [params] extra parameters specific to the exchange API endpoint
+     * @returns {object} an open interest structure
+     */
+    async fetchOpenInterest (symbol: string, params = {}): Promise<OpenInterest> {
+        await this.loadMarkets ();
+        const market = this.market (symbol);
+        const query: Dict = {
+            'symbol': market['base'] + '-' + market['quote'],
+        };
+        const url = this.urls['api']['public'] + '/v1/open-interest?' + this.urlencode (query);
+        const response = await this.fetch (url, 'GET', undefined, undefined);
+        //
+        // {
+        //   "openInterest": "-341.19996",
+        //   "symbol": "ATOM-USDC",
+        //   "time": 1754427059775
+        // }
+        //
+        return this.parseOpenInterest (response, market);
+    }
+
+    parseFundingRate (fundingRate, market: Market = undefined): FundingRate {
+        //
+        // {
+        //   "symbol": "ATOM-USDC",
+        //   "funding_rate": "-0.117462885648393966",
+        //   "long_rate": "-0.189599831252923122",
+        //   "short_rate": "0.117462885648393966",
+        //   "timestamp": 1754361530209
+        // }
+        //
+        const marketId = this.safeString (fundingRate, 'symbol');
+        const symbol = this.safeSymbol (marketId, market, '-');
+        const timestamp = this.safeInteger (fundingRate, 'timestamp');
+        const rate = this.safeString (fundingRate, 'funding_rate');
+        return {
+            'info': fundingRate,
+            'symbol': symbol,
+            'markPrice': undefined,
+            'indexPrice': undefined,
+            'interestRate': undefined,
+            'estimatedSettlePrice': undefined,
+            'timestamp': timestamp,
+            'datetime': this.iso8601 (timestamp),
+            'fundingRate': this.parseNumber (rate),
+            'fundingTimestamp': timestamp,
+            'fundingDatetime': this.iso8601 (timestamp),
+            'nextFundingRate': undefined,
+            'nextFundingTimestamp': undefined,
+            'nextFundingDatetime': undefined,
+            'previousFundingRate': undefined,
+            'previousFundingTimestamp': undefined,
+            'previousFundingDatetime': undefined,
+        };
+    }
+
+    parseOpenInterest (openInterest, market: Market = undefined): OpenInterest {
+        //
+        // {
+        //   "openInterest": "-341.19996",
+        //   "symbol": "ATOM-USDC",
+        //   "time": 1754427059775
+        // }
+        //
+        const marketId = this.safeString (openInterest, 'symbol');
+        const symbol = this.safeSymbol (marketId, market, '-');
+        const openInterestAmount = this.safeString (openInterest, 'openInterest');
+        const timestamp = this.safeInteger (openInterest, 'time');
+        return {
+            'symbol': symbol,
+            'baseVolume': this.parseNumber (openInterestAmount),
+            'quoteVolume': undefined,
+            'openInterestAmount': this.parseNumber (openInterestAmount),
+            'timestamp': timestamp,
+            'datetime': this.iso8601 (timestamp),
+            'info': openInterest,
+        };
+    }
+
+    /**
+     * @method
      * @name elys#fetchOHLCV
      * @description fetches historical candlestick data containing the open, high, low, and close price, and the volume of a market
      * @param {string} symbol unified symbol of the market to fetch OHLCV data for
@@ -651,6 +773,365 @@ export default class elys extends Exchange {
         return this.filterBySinceLimit (result, since, limit, 'timestamp');
     }
 
+    /**
+     * @method
+     * @name elys#fetchTrades
+     * @description fetch historical trades for a symbol
+     * @param {string} symbol unified market symbol
+     * @param {int} [since] the earliest time in ms to fetch trades for
+     * @param {int} [limit] the maximum number of trades to return
+     * @param {object} [params] extra parameters specific to the exchange API endpoint
+     * @param {string} params.address the wallet address to fetch trades for (required)
+     * @param {int} [params.from] pagination offset, defaults to 0
+     * @returns {Trade[]} a list of trade structures
+     */
+    async fetchTrades (symbol: string = undefined, since: Int = undefined, limit: Int = undefined, params = {}): Promise<Trade[]> {
+        if (symbol === undefined) {
+            throw new ArgumentsRequired (this.id + ' fetchTrades() requires a symbol parameter');
+        }
+        await this.loadMarkets ();
+        const market = this.market (symbol);
+        const address = this.safeString (params, 'address');
+        if (address === undefined) {
+            throw new ArgumentsRequired (this.id + ' fetchTrades() requires an address parameter');
+        }
+        const fromParam = this.safeString (params, 'from', '0');
+        const size = this.safeString (params, 'size', limit ? limit.toString () : '100');
+        params = this.omit (params, [ 'address', 'from', 'size' ]);
+        // Convert symbol to API format (base-quote)
+        const symbolId = market['base'] + '-' + market['quote'];
+        const path = 'trades/' + address + '/' + symbolId + '/' + size + '/' + fromParam;
+        const url = this.urls['api']['public'] + '/' + path;
+        const response = await this.fetch (url, 'GET', undefined, undefined);
+        //
+        // {
+        //     "perpetual_position": [
+        //         {
+        //             "type": "perpetual_mtp_open",
+        //             "mtp_id": "64",
+        //             "owner": "elys1u8c28343vvhwgwhf29w6hlcz73hvq7lwxmrl46",
+        //             "position": "SHORT",
+        //             "amm_pool_id": "1",
+        //             "collateral_asset": "USDC",
+        //             "collateral": "19.754485",
+        //             "open_price": "4.345121747801747801",
+        //             "created_at": "2025-07-30T21:44:56.048Z",
+        //             "txhash": "68582DF04AE7F04302F66D937B18E2B7B181664A7C01247689473DA746DBC153"
+        //         }
+        //     ],
+        //     "spot_orders": [
+        //         {
+        //             "type": "tradeshield_execute_market_buy_spot_order",
+        //             "order_type": "MARKETBUY",
+        //             "order_id": "0",
+        //             "order_price": "5.354117447312775000",
+        //             "order_amount": {
+        //                 "denom": "ATOM",
+        //                 "amount": "1"
+        //             },
+        //             "owner_address": "elys1u8c28343vvhwgwhf29w6hlcz73hvq7lwxmrl46",
+        //             "created_at": "2025-05-12T12:40:38.309Z",
+        //             "txhash": "7C8555767E7D8D492B62E132108EC4CE26DAC8D78F008611A5AE3C1FD3D2DCD5"
+        //         }
+        //     ]
+        // }
+        //
+        const result = [];
+        // Process perpetual position trades
+        const perpetualPositions = this.safeList (response, 'perpetual_position', []);
+        for (let i = 0; i < perpetualPositions.length; i++) {
+            const trade = this.parseMyTrade (perpetualPositions[i], market);
+            result.push (trade);
+        }
+        // Process spot order trades
+        const spotOrders = this.safeList (response, 'spot_orders', []);
+        for (let i = 0; i < spotOrders.length; i++) {
+            const trade = this.parseMyTrade (spotOrders[i], market);
+            result.push (trade);
+        }
+        return this.filterBySinceLimit (result, since, limit, 'timestamp');
+    }
+
+    /**
+     * @method
+     * @name elys#fetchOpenOrders
+     * @description fetch open orders for a symbol
+     * @param {string} symbol unified market symbol
+     * @param {int} [since] the earliest time in ms to fetch orders for
+     * @param {int} [limit] the maximum number of orders to return
+     * @param {object} [params] extra parameters specific to the exchange API endpoint
+     * @param {string} [params.address] the wallet address to fetch orders for
+     * @returns {Order[]} a list of order structures
+     */
+    async fetchOpenOrders (symbol: string = undefined, since: Int = undefined, limit: Int = undefined, params = {}): Promise<Order[]> {
+        if (symbol === undefined) {
+            throw new ArgumentsRequired (this.id + ' fetchOpenOrders() requires a symbol parameter');
+        }
+        await this.loadMarkets ();
+        const market = this.market (symbol);
+        const address = this.safeString (params, 'address');
+        const query: Dict = {
+            'symbol': market['base'] + '-' + market['quote'],
+        };
+        if (address !== undefined) {
+            query['address'] = address;
+        }
+        params = this.omit (params, [ 'address' ]);
+        const url = this.urls['api']['public'] + '/v1/orders/open?' + this.urlencode (query);
+        const response = await this.fetch (url, 'GET', undefined, undefined);
+        //
+        // {
+        //   "pending_spot_orders": null,
+        //   "pending_perpetual_orders": [
+        //     {
+        //       "order_id": "24",
+        //       "owner_address": "elys1wstfr2fx8h9tdxhs4wv4t8sjxdgrw6f9dpdpdf",
+        //       "position": "LONG",
+        //       "trigger_price": "0.000000000000000000",
+        //       "collateral_denom": "USDC",
+        //       "collateral_value": "4240.469631",
+        //       "leverage": "3.000000000000000000",
+        //       "take_profit_price": "0.000000000000000000",
+        //       "stop_loss_price": "0.000000000000000000",
+        //       "pool_id": "6",
+        //       "liquidation_price": "2513.381153809520746186",
+        //       "funding_rate": "0.000000000000000000",
+        //       "borrow_interest_rate": "0.000000000000000000",
+        //       "position_size_denom": "ETH",
+        //       "position_size_value": "3.457635083"
+        //     }
+        //   ]
+        // }
+        //
+        const result = [];
+        // Process pending spot orders
+        const spotOrders = this.safeList (response, 'pending_spot_orders', []);
+        for (let i = 0; i < spotOrders.length; i++) {
+            const order = this.parseOrder (spotOrders[i], market);
+            result.push (order);
+        }
+        // Process pending perpetual orders
+        const perpetualOrders = this.safeList (response, 'pending_perpetual_orders', []);
+        for (let i = 0; i < perpetualOrders.length; i++) {
+            const order = this.parseOrder (perpetualOrders[i], market);
+            result.push (order);
+        }
+        return this.filterBySinceLimit (result, since, limit, 'timestamp');
+    }
+
+    /**
+     * @method
+     * @name elys#fetchOrder
+     * @description fetch a specific order by id
+     * @param {string} id order id
+     * @param {string} symbol unified market symbol
+     * @param {object} [params] extra parameters specific to the exchange API endpoint
+     * @param {string} params.address the wallet address that owns the order (required)
+     * @returns {object} an order structure
+     */
+    async fetchOrder (id: string, symbol: string = undefined, params = {}): Promise<Order> {
+        if (id === undefined) {
+            throw new ArgumentsRequired (this.id + ' fetchOrder() requires an id parameter');
+        }
+        if (symbol === undefined) {
+            throw new ArgumentsRequired (this.id + ' fetchOrder() requires a symbol parameter');
+        }
+        await this.loadMarkets ();
+        const market = this.market (symbol);
+        const address = this.safeString (params, 'address');
+        if (address === undefined) {
+            throw new ArgumentsRequired (this.id + ' fetchOrder() requires an address parameter');
+        }
+        const query: Dict = {
+            'id': id,
+            'symbol': market['base'] + '-' + market['quote'],
+            'address': address,
+        };
+        params = this.omit (params, [ 'address' ]);
+        const url = this.urls['api']['public'] + '/v1/order?' + this.urlencode (query);
+        const response = await this.fetch (url, 'GET', undefined, undefined);
+        //
+        // {
+        //   "collateral_asset": "USDC",
+        //   "trading_asset": "WBTC",
+        //   "liability_asset": "USDC",
+        //   "custody_asset": "WBTC",
+        //   "collateral": "21.552225",
+        //   "liability": "21.571616",
+        //   "borrow_interest_paid_custody": "0",
+        //   "borrow_interest_unpaid_liability": "19391",
+        //   "custody": "38062",
+        //   "health": "2.006222443084368180",
+        //   "position": "LONG",
+        //   "amm_pool_id": 5,
+        //   "take_profit_price": "0.000000000000000000",
+        //   "take_profit_borrow_factor": "1.000000000000000000",
+        //   "funding_fee_paid_custody": "81",
+        //   "funding_fee_received_custody": "181",
+        //   "open_price": "113500.890943575154101469",
+        //   "stop_loss_price": "58169.206608582266477003",
+        //   "trading_asset_price": "113668.427604308776796146",
+        //   "pnl": {
+        //     "denom": "USDC",
+        //     "amount": "0.153619"
+        //   },
+        //   "effective_leverage": "1.992036442801146611",
+        //   "liquidation_price": "58022.183058726551416110",
+        //   "fees": {
+        //     "total_fees_base_currency": "92099",
+        //     "borrow_interest_fees_liability_asset": "0",
+        //     "borrow_interest_fees_base_currency": "0",
+        //     "funding_fees_liquidity_asset": "81",
+        //     "funding_fees_base_currency": "92099"
+        //   },
+        //   "id": 125
+        // }
+        //
+        // This is actually a perpetual position, not a traditional order
+        // We'll parse it as an order structure
+        const position = this.safeString (response, 'position'); // 'LONG' or 'SHORT'
+        const side = position ? position.toLowerCase () : undefined;
+        const collateral = this.safeString (response, 'collateral');
+        const openPrice = this.safeString (response, 'open_price');
+        const orderId = this.safeString (response, 'id');
+        const stopLossPrice = this.safeString (response, 'stop_loss_price');
+        const takeProfitPrice = this.safeString (response, 'take_profit_price');
+        const cost = (collateral && openPrice) ? this.numberToString (this.parseNumber (collateral) * this.parseNumber (openPrice)) : undefined;
+        return this.safeOrder ({
+            'id': orderId,
+            'clientOrderId': undefined,
+            'info': response,
+            'timestamp': undefined,
+            'datetime': undefined,
+            'lastTradeTimestamp': undefined,
+            'symbol': symbol,
+            'type': 'market', // perpetual positions are typically market orders
+            'timeInForce': undefined,
+            'postOnly': undefined,
+            'side': side,
+            'amount': collateral, // using collateral as amount
+            'price': openPrice,
+            'stopPrice': stopLossPrice,
+            'triggerPrice': undefined,
+            'takeProfitPrice': takeProfitPrice,
+            'cost': cost,
+            'average': openPrice,
+            'filled': collateral, // assuming position is fully filled
+            'remaining': '0', // perpetual positions are fully filled
+            'status': 'closed', // this is an active position, but in order terms it's "filled"
+            'fee': undefined,
+            'trades': undefined,
+        }, market);
+    }
+
+    /**
+     * @method
+     * @name elys#fetchOrders
+     * @description fetch all orders (perpetual positions) for a symbol
+     * @param {string} symbol unified market symbol
+     * @param {int} [since] the earliest time in ms to fetch orders for
+     * @param {int} [limit] the maximum number of orders to return
+     * @param {object} [params] extra parameters specific to the exchange API endpoint
+     * @param {string} [params.address] optional address to filter orders
+     * @returns {Order[]} a list of order structures
+     */
+    async fetchOrders (symbol: string = undefined, since: Int = undefined, limit: Int = undefined, params = {}): Promise<Order[]> {
+        if (symbol === undefined) {
+            throw new ArgumentsRequired (this.id + ' fetchOrders() requires a symbol parameter');
+        }
+        await this.loadMarkets ();
+        const market = this.market (symbol);
+        const address = this.safeString (params, 'address');
+        const query: Dict = {
+            'symbol': market['base'] + '-' + market['quote'],
+        };
+        if (address !== undefined) {
+            query['address'] = address;
+        }
+        params = this.omit (params, [ 'address' ]);
+        const url = this.urls['api']['public'] + '/v1/orders?' + this.urlencode (query);
+        const response = await this.fetch (url, 'GET', undefined, undefined);
+        //
+        // [
+        //   {
+        //     "collateral_asset": "USDC",
+        //     "trading_asset": "WBTC",
+        //     "liability_asset": "USDC",
+        //     "custody_asset": "WBTC",
+        //     "collateral": "0.028661",
+        //     "liability": "0.058045",
+        //     "borrow_interest_paid_custody": "2486",
+        //     "borrow_interest_unpaid_liability": "721",
+        //     "custody": "42062",
+        //     "health": "823.960724878386525358",
+        //     "position": "LONG",
+        //     "amm_pool_id": 5,
+        //     "take_profit_price": "0.000000000000000000",
+        //     "take_profit_borrow_factor": "1.000000000000000000",
+        //     "funding_fee_paid_custody": "1767",
+        //     "funding_fee_received_custody": "41984",
+        //     "open_price": "107780.910665021660979213",
+        //     "stop_loss_price": "74350.528603299143254436",
+        //     "trading_asset_price": "113671.371393379478105303",
+        //     "pnl": {
+        //       "denom": "USDC",
+        //       "amount": "47.740094"
+        //     },
+        //     "effective_leverage": "1.001200013156294978",
+        //     "liquidation_price": "139.649738172221958061",
+        //     "fees": {
+        //       "total_fees_base_currency": "4835894",
+        //       "borrow_interest_fees_liability_asset": "2486",
+        //       "borrow_interest_fees_base_currency": "2826718",
+        //       "funding_fees_liquidity_asset": "1767",
+        //       "funding_fees_base_currency": "2009175"
+        //     },
+        //     "id": 2
+        //   }
+        // ]
+        //
+        const result = [];
+        for (let i = 0; i < response.length; i++) {
+            const position = response[i];
+            // Parse each perpetual position as an order
+            const positionSide = this.safeString (position, 'position'); // 'LONG' or 'SHORT'
+            const side = positionSide ? positionSide.toLowerCase () : undefined;
+            const collateral = this.safeString (position, 'collateral');
+            const openPrice = this.safeString (position, 'open_price');
+            const orderId = this.safeString (position, 'id');
+            const stopLossPrice = this.safeString (position, 'stop_loss_price');
+            const takeProfitPrice = this.safeString (position, 'take_profit_price');
+            const cost = (collateral && openPrice) ? this.numberToString (this.parseNumber (collateral) * this.parseNumber (openPrice)) : undefined;
+            const order = this.safeOrder ({
+                'id': orderId,
+                'clientOrderId': undefined,
+                'info': position,
+                'timestamp': undefined,
+                'datetime': undefined,
+                'lastTradeTimestamp': undefined,
+                'symbol': symbol,
+                'type': 'market', // perpetual positions are typically market orders
+                'timeInForce': undefined,
+                'postOnly': undefined,
+                'side': side,
+                'amount': collateral, // using collateral as amount
+                'price': openPrice,
+                'stopPrice': stopLossPrice,
+                'triggerPrice': undefined,
+                'takeProfitPrice': takeProfitPrice,
+                'cost': cost,
+                'average': openPrice,
+                'filled': collateral, // assuming position is fully filled
+                'remaining': '0', // perpetual positions are fully filled
+                'status': 'closed', // this is an active position, but in order terms it's "filled"
+                'fee': undefined,
+                'trades': undefined,
+            }, market);
+            result.push (order);
+        }
+        return this.filterBySinceLimit (result, since, limit, 'timestamp');
+    }
+
     parseMyTrade (trade, market: Market = undefined): Trade {
         //
         // Perpetual position trade:
@@ -727,6 +1208,98 @@ export default class elys extends Exchange {
             'cost': cost,
             'fee': undefined, // fee information not directly available
             'takerOrMaker': undefined,
+        }, market);
+    }
+
+    parseOrder (order, market: Market = undefined): Order {
+        //
+        // Perpetual Order:
+        // {
+        //   "order_id": "24",
+        //   "owner_address": "elys1wstfr2fx8h9tdxhs4wv4t8sjxdgrw6f9dpdpdf",
+        //   "position": "LONG",
+        //   "trigger_price": "0.000000000000000000",
+        //   "collateral_denom": "USDC",
+        //   "collateral_value": "4240.469631",
+        //   "leverage": "3.000000000000000000",
+        //   "take_profit_price": "0.000000000000000000",
+        //   "stop_loss_price": "0.000000000000000000",
+        //   "pool_id": "6",
+        //   "liquidation_price": "2513.381153809520746186",
+        //   "funding_rate": "0.000000000000000000",
+        //   "borrow_interest_rate": "0.000000000000000000",
+        //   "position_size_denom": "ETH",
+        //   "position_size_value": "3.457635083"
+        // }
+        //
+        // Spot Order:
+        // {
+        //   "order_amount": "string",
+        //   "order_denom": "string",
+        //   "order_id": 0,
+        //   "order_price": null,
+        //   "order_target_denom": "string",
+        //   "order_type": "string",
+        //   "owner_address": "string",
+        //   "status": "string"
+        // }
+        //
+        const id = this.safeString (order, 'order_id');
+        const symbol = market ? market['symbol'] : undefined;
+        // Check if it's a perpetual order (has position field) or spot order (has order_type field)
+        const isPerpetual = ('position' in order);
+        let side: string;
+        let amount: string;
+        let price: string;
+        let type: string;
+        let status: string;
+        if (isPerpetual) {
+            // Perpetual order
+            const position = this.safeString (order, 'position'); // 'LONG' or 'SHORT'
+            side = position ? position.toLowerCase () : undefined;
+            amount = this.safeString (order, 'position_size_value');
+            const triggerPrice = this.safeString (order, 'trigger_price');
+            price = (triggerPrice && triggerPrice !== '0.000000000000000000') ? triggerPrice : undefined;
+            type = price ? 'limit' : 'market';
+            status = 'open'; // perpetual orders are pending/open
+        } else {
+            // Spot order
+            const orderType = this.safeString (order, 'order_type');
+            side = (orderType === 'MARKETBUY' || orderType === 'LIMITBUY') ? 'buy' : 'sell';
+            amount = this.safeString (order, 'order_amount');
+            price = this.safeString (order, 'order_price');
+            if (orderType && orderType.indexOf ('MARKET') >= 0) {
+                type = 'market';
+            } else {
+                type = 'limit';
+            }
+            status = this.safeString (order, 'status', 'open');
+        }
+        const cost = (amount && price) ? this.numberToString (this.parseNumber (amount) * this.parseNumber (price)) : undefined;
+        return this.safeOrder ({
+            'id': id,
+            'clientOrderId': undefined,
+            'info': order,
+            'timestamp': undefined,
+            'datetime': undefined,
+            'lastTradeTimestamp': undefined,
+            'symbol': symbol,
+            'type': type,
+            'timeInForce': undefined,
+            'postOnly': undefined,
+            'side': side,
+            'amount': amount,
+            'price': price,
+            'stopPrice': isPerpetual ? this.safeString (order, 'stop_loss_price') : undefined,
+            'triggerPrice': isPerpetual ? this.safeString (order, 'trigger_price') : undefined,
+            'takeProfitPrice': isPerpetual ? this.safeString (order, 'take_profit_price') : undefined,
+            'cost': cost,
+            'average': undefined,
+            'filled': undefined,
+            'remaining': amount,
+            'status': status,
+            'fee': undefined,
+            'trades': undefined,
         }, market);
     }
 }

@@ -8,9 +8,15 @@
 * [fetchCurrencies](#fetchcurrencies)
 * [fetchMarkets](#fetchmarkets)
 * [fetchTickers](#fetchtickers)
+* [fetchFundingRates](#fetchfundingrates)
+* [fetchOpenInterest](#fetchopeninterest)
 * [fetchOHLCV](#fetchohlcv)
 * [fetchBalance](#fetchbalance)
 * [fetchMyTrades](#fetchmytrades)
+* [fetchTrades](#fetchtrades)
+* [fetchOpenOrders](#fetchopenorders)
+* [fetchOrder](#fetchorder)
+* [fetchOrders](#fetchorders)
 
 <a name="fetchCurrencies" id="fetchcurrencies"></a>
 
@@ -67,6 +73,46 @@ fetches price tickers for multiple markets, statistical information calculated o
 
 ```javascript
 elys.fetchTickers (symbols[, params])
+```
+
+
+<a name="fetchFundingRates" id="fetchfundingrates"></a>
+
+### fetchFundingRates{docsify-ignore}
+fetch the funding rates for multiple markets
+
+**Kind**: instance method of [<code>elys</code>](#elys)  
+**Returns**: <code>object</code> - a dictionary of funding rates structures
+
+
+| Param | Type | Required | Description |
+| --- | --- | --- | --- |
+| symbols | <code>Array&lt;string&gt;</code>, <code>undefined</code> | Yes | unified symbols of the markets to fetch the funding rates for, all market funding rates are returned if not assigned |
+| params | <code>object</code> | No | extra parameters specific to the exchange API endpoint |
+
+
+```javascript
+elys.fetchFundingRates (symbols[, params])
+```
+
+
+<a name="fetchOpenInterest" id="fetchopeninterest"></a>
+
+### fetchOpenInterest{docsify-ignore}
+fetch the open interest for a symbol
+
+**Kind**: instance method of [<code>elys</code>](#elys)  
+**Returns**: <code>object</code> - an open interest structure
+
+
+| Param | Type | Required | Description |
+| --- | --- | --- | --- |
+| symbol | <code>string</code> | Yes | unified market symbol |
+| params | <code>object</code> | No | extra parameters specific to the exchange API endpoint |
+
+
+```javascript
+elys.fetchOpenInterest (symbol[, params])
 ```
 
 
@@ -135,5 +181,97 @@ fetch all trades made by the user
 
 ```javascript
 elys.fetchMyTrades (symbol[, since, limit, params])
+```
+
+
+<a name="fetchTrades" id="fetchtrades"></a>
+
+### fetchTrades{docsify-ignore}
+fetch historical trades for a symbol
+
+**Kind**: instance method of [<code>elys</code>](#elys)  
+**Returns**: <code>Array&lt;Trade&gt;</code> - a list of trade structures
+
+
+| Param | Type | Required | Description |
+| --- | --- | --- | --- |
+| symbol | <code>string</code> | Yes | unified market symbol |
+| since | <code>int</code> | No | the earliest time in ms to fetch trades for |
+| limit | <code>int</code> | No | the maximum number of trades to return |
+| params | <code>object</code> | No | extra parameters specific to the exchange API endpoint |
+| params.address | <code>string</code> | Yes | the wallet address to fetch trades for (required) |
+| params.from | <code>int</code> | No | pagination offset, defaults to 0 |
+
+
+```javascript
+elys.fetchTrades (symbol[, since, limit, params])
+```
+
+
+<a name="fetchOpenOrders" id="fetchopenorders"></a>
+
+### fetchOpenOrders{docsify-ignore}
+fetch open orders for a symbol
+
+**Kind**: instance method of [<code>elys</code>](#elys)  
+**Returns**: <code>Array&lt;Order&gt;</code> - a list of order structures
+
+
+| Param | Type | Required | Description |
+| --- | --- | --- | --- |
+| symbol | <code>string</code> | Yes | unified market symbol |
+| since | <code>int</code> | No | the earliest time in ms to fetch orders for |
+| limit | <code>int</code> | No | the maximum number of orders to return |
+| params | <code>object</code> | No | extra parameters specific to the exchange API endpoint |
+| params.address | <code>string</code> | No | the wallet address to fetch orders for |
+
+
+```javascript
+elys.fetchOpenOrders (symbol[, since, limit, params])
+```
+
+
+<a name="fetchOrder" id="fetchorder"></a>
+
+### fetchOrder{docsify-ignore}
+fetch a specific order by id
+
+**Kind**: instance method of [<code>elys</code>](#elys)  
+**Returns**: <code>object</code> - an order structure
+
+
+| Param | Type | Required | Description |
+| --- | --- | --- | --- |
+| id | <code>string</code> | Yes | order id |
+| symbol | <code>string</code> | Yes | unified market symbol |
+| params | <code>object</code> | No | extra parameters specific to the exchange API endpoint |
+| params.address | <code>string</code> | Yes | the wallet address that owns the order (required) |
+
+
+```javascript
+elys.fetchOrder (id, symbol[, params])
+```
+
+
+<a name="fetchOrders" id="fetchorders"></a>
+
+### fetchOrders{docsify-ignore}
+fetch all orders (perpetual positions) for a symbol
+
+**Kind**: instance method of [<code>elys</code>](#elys)  
+**Returns**: <code>Array&lt;Order&gt;</code> - a list of order structures
+
+
+| Param | Type | Required | Description |
+| --- | --- | --- | --- |
+| symbol | <code>string</code> | Yes | unified market symbol |
+| since | <code>int</code> | No | the earliest time in ms to fetch orders for |
+| limit | <code>int</code> | No | the maximum number of orders to return |
+| params | <code>object</code> | No | extra parameters specific to the exchange API endpoint |
+| params.address | <code>string</code> | No | optional address to filter orders |
+
+
+```javascript
+elys.fetchOrders (symbol[, since, limit, params])
 ```
 
